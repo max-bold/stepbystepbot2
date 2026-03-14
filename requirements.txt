@@ -1,0 +1,14 @@
+fastapi
+sqlmodel
+dotenv
+maxapi
+aiogram
+requests
+sqlalchemy
+sqlmodel
+yookassa
+alembic
+email-validator
+aiohttp_socks
+aiohttp
+argon2-cffi
