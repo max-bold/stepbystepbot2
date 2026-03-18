@@ -1,18 +1,11 @@
-from dotenv import load_dotenv
-from os import getenv
-
-from sqlmodel import create_engine, SQLModel, Field, Relationship, Column, Session
+from sqlmodel import SQLModel, Field, Relationship, Column
 from sqlalchemy import JSON
 
+from .utils import engine
 
 from typing import Dict, Any
 
-load_dotenv()
-
-DB_URL = getenv("DATABASE_URL")
-
-if DB_URL is None:
-    raise ValueError("DATABASE_URL is not set in the environment variables.")
+from enum import Enum
 
 
 class BotAdmins(SQLModel, table=True):
@@ -38,6 +31,18 @@ class User(SQLModel, table=True):
     refresh_token_expiry: float | None = None
 
 
+class PaymentMethodType(Enum):
+    YOOKASSA = "yookassa"
+
+
+class PaymentMethod(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    method: PaymentMethodType
+    api_key: str
+    store_id: str
+    bot_id: int = Field(foreign_key="bot.id")
+
+
 class Bot(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str
@@ -49,34 +54,77 @@ class Bot(SQLModel, table=True):
     owner_id: int = Field(foreign_key="user.id")
     owner: "User" = Relationship(back_populates="bots")
     settings: Dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSON, nullable=False)
+        default_factory=dict,
+        sa_column=Column(JSON),
     )
-    steps: list["Step"] = Relationship(back_populates="bot")
     admins: list["User"] = Relationship(
         back_populates="is_admin_of", link_model=BotAdmins
     )
     clients: list["Client"] = Relationship(back_populates="bot")
+    default_chain_id: int | None = Field(foreign_key="stepchain.id")
+    default_chain: "StepChain" = Relationship()
+    payment_methods: list[PaymentMethod] = Relationship()
+
+
+class StepChain(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    steps: list["Step"] = Relationship()
+
+
+class StepType(Enum):
+    NORMAL = "normal"
+    INPUT = "input"
+    CONDITION = "condition"
+    PAYMENT = "payment"
+
+
+class DelayType(Enum):
+    FIXED = "fixed"
+    PERIOD = "period"
 
 
 class Step(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
-    bot_id: int = Field(foreign_key="bot.id")
-    bot: Bot = Relationship(back_populates="steps")
+    chain_id: int = Field(foreign_key="stepchain.id")
     step_number: int
     name: str | None = None
     description: str | None = None
-    messages: list["StepMessage"] = Relationship(back_populates="step")
+    messages: list["StepMessage"] = Relationship()
+    step_type: StepType = StepType.NORMAL
+    confirm_before: bool = False
+    confirm_prompt: str | None = None
+    confirm_btn_text: str | None = None
+    payment_details: Dict[str, Any] | None = Field(
+        default=None,
+        sa_column=Column(JSON),
+    )
+    payment_prompt: str | None = None
+    delay_type: DelayType | None = None
+    delay_value: int | None = None
+
+
+class MessageType(Enum):
+    TEXT = "text"
+    IMAGE = "image"
+    VIDEO = "video"
+    DOCUMENT = "document"
 
 
 class StepMessage(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     step_id: int = Field(foreign_key="step.id")
-    step: Step = Relationship(back_populates="messages")
     message_number: int
     content: str | None = None
     caption: str | None = None
     tg_file_id: str | None = None
     max_file_id: str | None = None
+    local_file_id: str | None = None
+    message_type: MessageType = MessageType.TEXT
+
+
+class ClientSource(Enum):
+    TG = "telegram"
+    MAX = "max"
 
 
 class Client(SQLModel, table=True):
@@ -86,23 +134,12 @@ class Client(SQLModel, table=True):
     bot_id: int = Field(foreign_key="bot.id")
     bot: Bot = Relationship()
     current_step: int = 0
+    source: ClientSource
 
-load_dotenv()
-DB_URL = getenv("DATABASE_URL")
-if DB_URL is None:
-    raise ValueError("DATABASE_URL is not set in the environment variables.")
-engine = create_engine(
-    DB_URL,
-    echo=True,  # логирование SQL (удобно на dev)
-    pool_pre_ping=True,  # чтобы соединения не тухли
-)
 
-session = Session(engine)
-
-def crate_tables():
-    
+def create_tables():
     SQLModel.metadata.create_all(engine)
 
 
 if __name__ == "__main__":
-    crate_tables()
+    create_tables()

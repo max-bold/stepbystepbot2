@@ -5,10 +5,21 @@ from aiohttp_socks import ProxyConnector
 from aiogram import Bot
 import os
 from dotenv import load_dotenv
+from sqlmodel import create_engine, SQLModel
 
 from maxapi import Bot as MaxBot
 
 load_dotenv()
+
+DB_URL = os.getenv("DATABASE_URL")
+if DB_URL is None:
+    raise ValueError("DATABASE_URL is not set in the environment variables.")
+
+engine = create_engine(
+    DB_URL,
+    echo=True,
+    pool_pre_ping=True,
+)
 
 
 class SocksAiohttpSession(AiohttpSession):
@@ -43,12 +54,17 @@ def tgbot_proxy(token: str) -> Bot:
     tg_session = SocksAiohttpSession(proxy_url=proxy_url)
     return Bot(token, tg_session)
 
+
 async def get_tgbot_id(token: str) -> int:
     bot = tgbot_proxy(token)
     me = await bot.get_me()
     return me.id
 
+
 async def get_maxbot_id(token: str) -> int:
     max_bot = MaxBot(token=token)
     max_bot_me = await max_bot.get_me()
     return max_bot_me.user_id
+
+def crate_tables():
+    SQLModel.metadata.create_all(engine)

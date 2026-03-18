@@ -1,19 +1,26 @@
-from .db import Bot
-from .db import session
+from .db import Bot, StepChain, PaymentMethod
 
-from sqlmodel import select
+from sqlmodel import Session, select
 from typing import Literal
 
 from aiogram import Bot as TgBot
 from maxapi import Bot as MaxBot
 
+from .utils import get_tgbot_id, get_maxbot_id
+from .utils import engine
 
 class TokenRegisterdError(ValueError):
     pass
 
-
-from .utils import get_tgbot_id, get_maxbot_id
-
+async def create_chain()->int:
+    with Session(engine) as session:
+        chain = StepChain()
+        session.add(chain)
+        session.commit()
+        session.refresh(chain)
+        if chain.id is None:
+            raise ValueError("Failed to create chain")
+        return chain.id
 
 async def create_bot(
     owner_id: int,
@@ -21,7 +28,7 @@ async def create_bot(
     description: str | None = None,
     tg_token: str | None = None,
     max_token: str | None = None,
-) -> Bot:
+) -> int:
     """Create a new bot with given parameters and save it to the database
 
     Args:
@@ -38,47 +45,54 @@ async def create_bot(
         TokenRegisterdError: If bot with such token already exists
 
     Returns:
-        Bot: The created bot instance
+        int|None: The ID of the created bot instance, or None if creation failed
     """
-    bot = Bot(
-        name=name,
-        description=description,
-        tg_token=tg_token,
-        max_token=max_token,
-        owner_id=owner_id,
-    )
-    if tg_token is not None:
-        if (
-            session.exec(select(Bot).where(Bot.tg_token == tg_token)).first()
-            is not None
-        ):
-            raise TokenRegisterdError("Bot with such Telegram token already exists")
-        bot.tg_id = await get_tgbot_id(tg_token)
+    with Session(engine) as session:
+        bot = Bot(
+            name=name,
+            description=description,
+            tg_token=tg_token,
+            max_token=max_token,
+            owner_id=owner_id,
+        )
+        if tg_token is not None:
+            if (
+                session.exec(select(Bot).where(Bot.tg_token == tg_token)).first()
+                is not None
+            ):
+                raise TokenRegisterdError("Bot with such Telegram token already exists")
+            bot.tg_id = await get_tgbot_id(tg_token)
 
-    if max_token is not None:
-        if (
-            session.exec(select(Bot).where(Bot.max_token == max_token)).first()
-            is not None
-        ):
-            raise TokenRegisterdError("Bot with such Max token already exists")
-        bot.max_id = await get_maxbot_id(max_token)
-
-    session.add(bot)
-    session.commit()
-    session.refresh(bot)
-    return bot
+        if max_token is not None:
+            if (
+                session.exec(select(Bot).where(Bot.max_token == max_token)).first()
+                is not None
+            ):
+                raise TokenRegisterdError("Bot with such Max token already exists")
+            bot.max_id = await get_maxbot_id(max_token)
+        chain_id = await create_chain()
+        bot.default_chain_id = chain_id
+        session.add(bot)
+        session.commit()
+        session.refresh(bot)
+        if bot.id is None:
+            raise ValueError("Failed to create bot")
+        return bot.id
 
 
 def get_tg_bot(id: str) -> Bot | None:
-    return session.exec(select(Bot).where(Bot.tg_id == id)).first()
+    with Session(engine) as session:
+        return session.exec(select(Bot).where(Bot.tg_id == id)).first()
 
 
 def get_max_bot(id: str) -> Bot | None:
-    return session.exec(select(Bot).where(Bot.max_id == id)).first()
+    with Session(engine) as session:
+        return session.exec(select(Bot).where(Bot.max_id == id)).first()
 
 
 def get_tgbots() -> list[TgBot]:
-    bots = session.exec(select(Bot).where(Bot.tg_token != None)).all()
+    with Session(engine) as session:
+        bots = session.exec(select(Bot).where(Bot.tg_token != None)).all()
     tg_bots = []
     for bot in bots:
         try:
@@ -92,7 +106,8 @@ def get_tgbots() -> list[TgBot]:
 
 
 def get_maxbots() -> list[MaxBot]:
-    bots = session.exec(select(Bot).where(Bot.max_token != None)).all()
+    with Session(engine) as session:
+        bots = session.exec(select(Bot).where(Bot.max_token != None)).all()
     max_bots = []
     for bot in bots:
         try:
@@ -103,3 +118,14 @@ def get_maxbots() -> list[MaxBot]:
         except Exception as e:
             print(f"Failed to create MaxBot for bot {bot.id}: {e}")
     return max_bots
+
+async def get_default_chain(bot_id: int) -> int:
+    with Session(engine) as session:
+        bot = session.get(Bot, bot_id)
+        if bot is None:
+            raise ValueError("No such bot")
+        if bot.default_chain_id is None:
+            raise ValueError("Bot has no default chain")
+        return bot.default_chain_id 
+    
+
