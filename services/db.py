@@ -60,8 +60,8 @@ class Bot(SQLModel, table=True):
     admins: list["User"] = Relationship(
         back_populates="is_admin_of", link_model=BotAdmins
     )
-    clients: list["Client"] = Relationship(back_populates="bot")
-    default_chain_id: int | None = Field(foreign_key="stepchain.id")
+    bot_users: list["BotUser"] = Relationship(back_populates="bot")
+    default_chain_id: int | None = Field(foreign_key="stepchain.id", default=None)
     default_chain: "StepChain" = Relationship()
     payment_methods: list[PaymentMethod] = Relationship()
 
@@ -105,7 +105,7 @@ class Step(SQLModel, table=True):
 
 class MessageType(Enum):
     TEXT = "text"
-    IMAGE = "image"
+    PHOTO = "photo"
     VIDEO = "video"
     DOCUMENT = "document"
 
@@ -122,19 +122,15 @@ class StepMessage(SQLModel, table=True):
     message_type: MessageType = MessageType.TEXT
 
 
-class ClientSource(Enum):
-    TG = "telegram"
-    MAX = "max"
-
-
-class Client(SQLModel, table=True):
+class BotUser(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
-    user_id: int = Field(foreign_key="user.id")
-    user: User = Relationship()
     bot_id: int = Field(foreign_key="bot.id")
     bot: Bot = Relationship()
+    tg_id: int | None = None
+    max_id: int | None = None
     current_step: int = 0
-    source: ClientSource
+    current_chain_id: int = Field(foreign_key="stepchain.id")
+    current_chain: StepChain = Relationship()
 
 
 def create_tables():

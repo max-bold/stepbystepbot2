@@ -1,4 +1,4 @@
-from .db import DelayType, Step, StepChain, StepType, PaymentMethod
+from .db import DelayType, Step, StepChain, StepType, MessageType
 from .utils import engine
 from sqlmodel import Session
 

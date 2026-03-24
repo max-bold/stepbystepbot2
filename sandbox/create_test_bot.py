@@ -109,7 +109,7 @@ async def main():
 
     await add_message(
         step_id=step_id,
-        message_type=MessageType.IMAGE,
+        message_type=MessageType.PHOTO,
         local_file_id="img1",
         caption="This is a photo message",
     )
